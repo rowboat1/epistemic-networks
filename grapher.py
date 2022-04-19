@@ -1,8 +1,4 @@
-import itertools
 import pygame
-import random
-from scipy.stats import norm
-import numpy as np
 from model import *
 
 pygame.init()
@@ -13,183 +9,116 @@ NODE_RADIUS = 10
 EDGE_THICKNESS = 3
 bg_color = "black"
 
+# These lines define points on a circle where we can place our nodes.
+# The first entry is how large the circle is, next two tell the start and end,
+# of the angle. The final element is where on the screen to draw it.
+SCI_LOCUS =  WIDTH//5, 90, 270, (WIDTH//4, HEIGHT//2)
+SPIN_LOCUS = WIDTH//8, 270, 360, (WIDTH*3//4, HEIGHT//4)
+POL_LOCUS = WIDTH//8, 0, 90, (WIDTH*3//4, HEIGHT*3//4)
 
+class Canvas:
+    def __init__(self, scenario):
+        self.lookup = {}
+        self.drawables = []
+        self.edges = []
 
-def button_a():
-    return random.gauss(MU, SIGMA)
+        # Each of the groups is drawn as though it forms a portion of a circle
+        # around a certain point. This block of code maps nodes from the model
+        # into their position in such a group.
+        for (collection, radius, angle_start, angle_end, center, view_obj) in [
+            (scenario.scientists, *SCI_LOCUS, ScientistView),
+            (scenario.spindoctors, *SPIN_LOCUS, SpinDoctorView),
+            (scenario.politicians, *POL_LOCUS, PoliticianView)
+        ]:
+            for x, entity in enumerate(collection):
+                angle_interval = angle_end - angle_start
+                loc = circle_point(radius, (angle_interval//len(collection))*x
+                    + angle_start, center)
+                view = view_obj(loc, entity)
+                self.drawables.append(view)
+                self.lookup[entity] = view
 
-def button_b():
-    return random.gauss(MU+1, SIGMA)
+        for edge in scenario.edges:
+            points = [self.lookup[v].loc for v in edge.vertices]
+            for k,v in {
+                ScienceEdge: ScienceEdgeView,
+                SpinReadEdge: SpinReadEdgeView,
+                SpinWriteEdge: SpinWriteEdgeView,
+                PolScienceEdge: PolScienceEdgeView
+            }.items():
+                if isinstance(edge, k):
+                    view = v(edge, points)
+                    break
+            self.edges.append(view)
+            self.lookup[edge] = view
+        self.scenario = scenario
+        self.bg_color = "black"
 
-scientists = []
-politicians = []
-spindoctors = []
-edges = []
-
-class Node:
     def update(self):
-        for score in [self.score] + [n.score for n in self.edges.values()]:
-            self.update_confidence(score)
-        self.update_color()
+        main_s.fill(self.bg_color)
+        for e in self.edges:
+            e.draw()
+        for d in self.drawables:
+            d.update_color()
+            d.draw()
+        if all([s.not_testing() for s in self.scenario.scientists]):
+            self.bg_color = "darkgrey"
 
-    def update_confidence(self, score):
-        self.confidence *= score*5 + 1
-        self.confidence = min(self.confidence, 1)
+class NodeView:
+    def __init__(self, loc, model):
+        self.loc = loc
+        self.model = model
+        self.color = "grey"
 
     def update_color(self):
-        self.color = (255-int(self.confidence*255), 0, int(self.confidence*255))
+        self.color = (255-int(self.model.confidence*255), 0,
+            int(self.model.confidence*255))
 
     def draw(self):
         pygame.draw.circle(main_s, self.color, self.loc, NODE_RADIUS)
 
-class Scientist(Node):
-    def __init__(self, x, loc):
-        self.x = x
-        self.color = "green"
-        self.confidence = random.uniform(0,1)
-        self.edges = {}
-        self.loc = loc
-        self.score = 1
-        scientists.append(self)
+class ScientistView(NodeView):
+    pass
 
-    def get_sample(self):
-        return button_b()
+class PoliticianView(NodeView):
+    pass
 
+class SpinDoctorView(NodeView):
     def update_color(self):
-        self.color = (255-int(self.confidence*255), 0, int(self.confidence*255))
+        pass
 
-    def low_confidence(self):
-        if self.confidence > LOW_CONF_THRESHOLD:
-            return False
-        else:
-            for n in self.edges.values():
-                if n.confidence > LOW_CONF_THRESHOLD:
-                    return False
-        return True
+class EdgeView:
+    def __init__(self, edge, color, points):
+        self.edge = edge
+        self.color = color
+        self.points = points
 
-    def high_confidence(self):
-        if self.confidence < HIGH_CONF_THRESHOLD:
-            return False
-        else:
-            for n in self.edges.values():
-                if n.confidence < HIGH_CONF_THRESHOLD:
-                    return False
-        return True
-
-    def not_testing(self):
-        return self.low_confidence() or self.high_confidence()
-
-    def perform_study(self):
-        if self.not_testing():
-            self.score = 0
-            return
-        samples = [self.get_sample() for _ in range(SAMPLES_PER_STUDY)]
-        if np.mean(samples) == 0.5:
-            samples += [self.get_sample() for _ in range(SAMPLES_PER_STUDY)]
-        self.score = np.mean(DIST_A.pdf(samples)) - np.mean(DIST_B.pdf(samples))
-
-
-class Politician(Node):
-    def __init__(self, x, loc):
-        self.x = x
-        self.color = "green"
-        self.edges = {}
-        self.confidence = 0.5
-        self.loc = loc
-        self.studies = []
-        self.score = 1
-        politicians.append(self)
-
-    def update(self):
-        for n in self.edges.values():
-            self.update_confidence(n.score)
-        self.update_color()
-
-class SpinDoctor(Node):
-    def __init__(self, x, loc):
-        self.x = x
-        self.color = "grey"
-        self.read_edges = {}
-        self.write_edges = {}
-        self.loc = loc
-        self.studies = []
-        self.score = 1
-        spindoctors.append(self)
-
-    def update(self):
-        self.score = min([n.score for n in self.read_edges.values()])
-
-class Edge:
     def draw(self):
         pygame.draw.line(main_s, self.color, *self.points, EDGE_THICKNESS)
 
-class ScienceEdge(Edge):
-    def __init__(self, a, b):
-        self.a, self.b = a,b
-        a.edges[self] = b
-        b.edges[self] = a
-        self.code = tuple(sorted([a.x, b.x]))
-        self.points = [a.loc, b.loc]
-        self.color = "green"
-        edges.append(self)
+class ScienceEdgeView(EdgeView):
+    def __init__(self, edge, points):
+        super().__init__(edge, "green", points)
 
-class SpinReadEdge(Edge):
-    def __init__(self, spinner, scientist):
-        spinner.read_edges[self] = scientist
-        self.points = [spinner.loc, scientist.loc]
-        self.color = "yellow"
-        edges.append(self)
+class SpinReadEdgeView(EdgeView):
+    def __init__(self, edge, points):
+        super().__init__(edge, "yellow", points)
 
-class SpinWriteEdge(Edge):
-    def __init__(self, spinner, pollie):
-        spinner.write_edges[self] = pollie
-        pollie.edges[self] = spinner
-        self.points = [spinner.loc, pollie.loc]
-        self.color = "cyan"
-        edges.append(self)
+class SpinWriteEdgeView(EdgeView):
+    def __init__(self, edge, points):
+        super().__init__(edge, "cyan", points)
 
-class PolScienceEdge(Edge):
-    def __init__(self, pollie, scientist):
-        pollie.edges[self] = scientist
-        self.points = [scientist.loc, pollie.loc]
-        self.color = "cyan"
-        edges.append(self)
+class PolScienceEdgeView(EdgeView):
+    def __init__(self, edge, points):
+        super().__init__(edge, "cyan", points)
 
 def circle_point(radius, phi, center):
     (loc:=vec()).from_polar((radius, phi))
     return loc + vec(*center)
 
 if __name__ == "__main__":
-    for x in range(NUM_SCIENTISTS):
-        loc = circle_point(WIDTH//5, (180//NUM_SCIENTISTS)*x + 90, (WIDTH//4,
-            HEIGHT//2))
-        Scientist(x, loc)
-
-    for x in range(NUM_SPINDOCTORS):
-        loc = circle_point(WIDTH//8, (90//NUM_SPINDOCTORS)*x + 270, (WIDTH*3//4,
-            HEIGHT//4))
-        SpinDoctor(x, loc)
-
-    for x in range(NUM_POLITICIANS):
-        loc = circle_point(WIDTH//8, (90//NUM_POLITICIANS)*x, (WIDTH*3//4,
-            HEIGHT*3//4))
-        Politician(x, loc)
-
-    for a,b in itertools.combinations(scientists, 2):
-        if random.uniform(0,1) < SCIENCE_EDGE_THRESHOLD:
-            ScienceEdge(a,b)
-
-    for spin, sci in itertools.product(spindoctors, scientists):
-        if random.uniform(0,1) < SPIN_SCI_EDGE_THRESHOLD:
-            SpinReadEdge(spin, sci)
-
-    for spin, pol in itertools.product(spindoctors, politicians):
-        if random.uniform(0,1) < POL_SPIN_EDGE_THRESHOLD:
-            SpinWriteEdge(spin, pol)
-
-    for pol, sci in itertools.product(politicians, scientists):
-        if random.uniform(0,1) < POL_SCI_EDGE_THRESHOLD:
-            PolScienceEdge(pol, sci)
+    scenario = Scenario()
+    canvas = Canvas(scenario)
 
     i = 0
     dir = 1
@@ -201,14 +130,9 @@ if __name__ == "__main__":
                 k = pygame.key.name(event.key)
                 if k == "escape":
                     exit()
-        main_s.fill(bg_color)
-        for edge in edges:
-            edge.draw()
-        for node in scientists:
-            node.perform_study()
-        for node in scientists + spindoctors + politicians:
-            node.update()
-            node.draw()
-        if all([s.not_testing() for s in scientists]):
-            bg_color = "darkgrey"
+                if k == "r":
+                    scenario = Scenario()
+                    canvas = Canvas(scenario)
+        scenario.update()
+        canvas.update()
         pygame.display.flip()
