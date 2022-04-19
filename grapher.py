@@ -115,24 +115,3 @@ class PolScienceEdgeView(EdgeView):
 def circle_point(radius, phi, center):
     (loc:=vec()).from_polar((radius, phi))
     return loc + vec(*center)
-
-if __name__ == "__main__":
-    scenario = Scenario()
-    canvas = Canvas(scenario)
-
-    i = 0
-    dir = 1
-    while 1:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                exit()
-            elif event.type == pygame.KEYDOWN:
-                k = pygame.key.name(event.key)
-                if k == "escape":
-                    exit()
-                if k == "r":
-                    scenario = Scenario()
-                    canvas = Canvas(scenario)
-        scenario.update()
-        canvas.update()
-        pygame.display.flip()
