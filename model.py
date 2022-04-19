@@ -3,9 +3,6 @@ import itertools
 import random
 import numpy as np
 
-NUM_SCIENTISTS = 10
-NUM_POLITICIANS = 1
-NUM_SPINDOCTORS = 3
 EPSILON = 0.005
 MU = 1 << 5
 SIGMA = MU >> 2
@@ -14,10 +11,6 @@ DIST_A = norm(loc = MU + EPSILON, scale = SIGMA)
 DIST_B = norm(loc = MU - EPSILON, scale = SIGMA)
 HIGH_CONF_THRESHOLD = 0.99
 LOW_CONF_THRESHOLD = 0.48
-SCIENCE_EDGE_THRESHOLD = 0.5
-POL_SCI_EDGE_THRESHOLD = 0.7
-POL_SPIN_EDGE_THRESHOLD = 1
-SPIN_SCI_EDGE_THRESHOLD = 0.7
 
 
 def button_a():
@@ -27,26 +20,28 @@ def button_b():
     return random.gauss(MU+1, SIGMA)
 
 class Scenario:
-    def __init__(self):
-        self.scientists = [Scientist(x) for x in range(NUM_SCIENTISTS)]
-        self.politicians = [Politician(x) for x in range(NUM_POLITICIANS)]
-        self.spindoctors = [SpinDoctor(x) for x in range(NUM_SPINDOCTORS)]
+    def __init__(self, num_scientists, num_spindoctors, num_politicians,
+                science_edge_threshold, spin_sci_edge_threshold,
+                pol_spin_edge_threshold, pol_sci_edge_threshold):
+        self.scientists = [Scientist(x) for x in range(num_scientists)]
+        self.spindoctors = [SpinDoctor(x) for x in range(num_spindoctors)]
+        self.politicians = [Politician(x) for x in range(num_politicians)]
         self.updateables = self.scientists + self.politicians + self.spindoctors
         self.edges = []
         for a,b in itertools.combinations(self.scientists, 2):
-            if random.uniform(0,1) < SCIENCE_EDGE_THRESHOLD:
+            if random.uniform(0,1) < science_edge_threshold:
                 self.edges.append(ScienceEdge(a,b))
 
         for spin, sci in itertools.product(self.spindoctors, self.scientists):
-            if random.uniform(0,1) < SPIN_SCI_EDGE_THRESHOLD:
+            if random.uniform(0,1) < spin_sci_edge_threshold:
                 self.edges.append(SpinReadEdge(spin, sci))
 
         for spin, pol in itertools.product(self.spindoctors, self.politicians):
-            if random.uniform(0,1) < POL_SPIN_EDGE_THRESHOLD:
+            if random.uniform(0,1) < pol_spin_edge_threshold:
                 self.edges.append(SpinWriteEdge(spin, pol))
 
         for pol, sci in itertools.product(self.politicians, self.scientists):
-            if random.uniform(0,1) < POL_SCI_EDGE_THRESHOLD:
+            if random.uniform(0,1) < pol_sci_edge_threshold:
                 self.edges.append(PolScienceEdge(pol, sci))
 
     def update(self):
